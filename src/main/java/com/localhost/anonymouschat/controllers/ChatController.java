@@ -96,6 +96,7 @@ public class ChatController {
     @GetMapping("/rooms")
     public ResponseEntity<List<ChatRoomResponse>> getChatRooms(@AuthenticationPrincipal User user) {
 
+        return null;
     }
 
     private MessageResponse mapToMessageResponse(Message message, UserDetailResponse sender) {
