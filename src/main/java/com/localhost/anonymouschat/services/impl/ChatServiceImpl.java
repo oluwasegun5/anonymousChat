@@ -2,10 +2,12 @@ package com.localhost.anonymouschat.services.impl;
 
 import com.localhost.anonymouschat.exception.ResourceNotFoundException;
 import com.localhost.anonymouschat.models.ChatRoom;
+import com.localhost.anonymouschat.models.ExpiringMessage;
 import com.localhost.anonymouschat.models.Message;
 import com.localhost.anonymouschat.models.User;
 import com.localhost.anonymouschat.payload.response.ChatRoomResponse;
 import com.localhost.anonymouschat.repositories.ChatRoomRepository;
+import com.localhost.anonymouschat.repositories.ExpiringMessageRepository;
 import com.localhost.anonymouschat.repositories.UserRepository;
 import com.localhost.anonymouschat.services.inter.ChatService;
 import com.localhost.anonymouschat.services.inter.UserService;
@@ -28,6 +30,8 @@ public class ChatServiceImpl implements ChatService {
     private final UserService userService;
     private final MessageModerationService moderationService;
     private final EncryptionService encryptionService;
+    private final ExpiringMessageRepository expiringMessageRepository;
+    private final MessageExpirationService messageExpirationService;
 
     @Override
     public ChatRoom createGroupChat(User creator, String chatName, Set<String> participantIds) {
@@ -149,5 +153,44 @@ public class ChatServiceImpl implements ChatService {
         if (!chatRoom.getParticipantIds().contains(userId)) {
             throw new SecurityException("User not authorized to post in this chat");
         }
+    }
+    
+    /**
+     * Saves an expiring message and schedules it for expiration
+     * 
+     * @param message The expiring message to save
+     * @return The saved message
+     */
+    public ExpiringMessage saveExpiringMessage(ExpiringMessage message) {
+        // Validate that the sender is a participant in the chat room
+        ChatRoom chatRoom = getChatRoom(message.getChatRoomId());
+        validateParticipant(chatRoom, message.getSenderId());
+        
+        // Apply moderation and encryption
+        String moderatedContent = moderationService.moderateMessage(
+                Message.builder().content(message.getContent()).build()
+        ).getContent();
+        
+        message.setContent(encryptionService.encrypt(moderatedContent));
+        
+        // Save the message
+        ExpiringMessage savedMessage = expiringMessageRepository.save(message);
+        
+        // Schedule message for expiration
+        messageExpirationService.scheduleMessageExpiration(savedMessage);
+        
+        return savedMessage;
+    }
+    
+    /**
+     * Retrieves an expiring message by ID if it hasn't expired
+     * 
+     * @param messageId The ID of the message to retrieve
+     * @return The message if found and not expired, null otherwise
+     */
+    public ExpiringMessage getExpiringMessage(String messageId) {
+        return expiringMessageRepository.findById(messageId)
+                .filter(message -> !message.isExpired())
+                .orElse(null);
     }
 }
